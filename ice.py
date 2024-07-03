@@ -22,7 +22,7 @@ from pyproj import Proj
 from pyproj import Transformer
 
 import pickle
-    
+
 def iceStats(dataSet):
     """Display statistics of dataset
         Args:
@@ -201,7 +201,7 @@ def area_Geographic(cont,file,retCon =  False): #geographic projection images
         return poly_area/1e+6
     
 def ice_olate(directory,layerName=None,display=False,setThresh=None,areaMethod=None,areaThresh=None,cutOff=None,retCnt = False):
-    """Isolate iceberg from its surroundings. 
+    """Isolate iceberg from its surroundings. Filters out images with less than 25% white pixels and more than 75% white pixels.
 
         Args:
             directory (str or list): file or file directory of GEOtiffs
@@ -235,7 +235,7 @@ def ice_olate(directory,layerName=None,display=False,setThresh=None,areaMethod=N
         if layerName == "blue": #isolate the red channel/the third band/band 1 for MODIS721 images and VIIRSM1I111 images
             band = rimg.read(3)    
         elif layerName == None: #binarize true color images
-            band = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)            
+            band = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         if setThresh != None: #if image is being reprocessed, the threshold can be adjusted for better results
     #1. Binary threshold
             ret,thresh4 = cv2.threshold(band,setThresh,255,cv2.THRESH_BINARY) #Eg: 200 instead of 210 makes quite a difference for some images
@@ -252,22 +252,142 @@ def ice_olate(directory,layerName=None,display=False,setThresh=None,areaMethod=N
         img_dilation = cv2.dilate(filteredImage, kernel, iterations=2) #dilate image
     #4. Blur
         blur = cv2.blur(img_dilation,(15,15))
-    #5. Otsu Threshold
-        rets, thresh = cv2.threshold(blur,0,255,cv2.THRESH_BINARY+cv2.THRESH_OTSU)
-        contours, hierarchy = cv2.findContours(thresh,cv2.RETR_EXTERNAL,cv2.CHAIN_APPROX_NONE) #obtain contours
-    #Calculate area
-        if (contours): #the image has contours, sometimes it may not
-            if display == True: #display contours
-                allContours = cv2.drawContours(img, contours, -1, (0,255,0), 3) #draw all contours on image
-                print('CONTOURED')
-                plt.imshow(cv2.cvtColor(allContours, cv2.COLOR_BGR2RGB)) #show image
-                plt.show()
-        #Reprocesssing
-            if cutOff and areaThresh: #reprocess if these parameters have values
-                cnt = contours[0] #first contour
-                for i in range(len(contours)): #check for closest area among contours
-                    icnt = contours[i] #current contour
-                    if i == 0: #the first contour
+        dataset = rasterio.open(file)
+        total_pixel = dataset.height*dataset.width
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY) 
+        nonZero = cv2.countNonZero(gray) #count nonzero pixels
+        if nonZero<=.25*total_pixel:
+            print('Cropped out.')
+            return('Cropped out.')
+        else:
+            nonZero = cv2.countNonZero(blur) #count nonzero pixels
+            if nonZero >= .75*total_pixel:
+                print('Too cloudy.')
+                return('Too cloudy.')
+            else:
+            #5. Otsu Threshold
+                rets, thresh = cv2.threshold(blur,0,255,cv2.THRESH_BINARY+cv2.THRESH_OTSU)
+                contours, hierarchy = cv2.findContours(thresh,cv2.RETR_EXTERNAL,cv2.CHAIN_APPROX_NONE) #obtain contours
+            #Calculate area
+                if (contours): #the image has contours, sometimes it may not
+                    if display == True: #display contours
+                        allContours = cv2.drawContours(img, contours, -1, (0,255,0), 3) #draw all contours on image
+                        print('CONTOURED')
+                        plt.imshow(cv2.cvtColor(allContours, cv2.COLOR_BGR2RGB)) #show image
+                        plt.show()
+                #Reprocesssing
+                    if cutOff and areaThresh: #reprocess if these parameters have values
+                        cnt = contours[0] #first contour
+                        for i in range(len(contours)): #check for closest area among contours
+                            icnt = contours[i] #current contour
+                            if i == 0: #the first contour
+                                if areaMethod=="area_PixelImageDimensions": #use first area method
+                                    if retCnt==True: #error if trying to obtain contour coordinates 
+                                        raise Exception('Cannot obtain contour coordinates with this area method. Please try a different area method.')
+                                    h, w = img.shape[:2]
+                                    mask = np.zeros((h, w), np.uint8)
+                                    cv2.drawContours(mask, [cnt],-1, 255, -1) #create mask
+                                    BergArea = area_PixelImageDimensions(mask,img)
+                                elif areaMethod=="area_PS": #use second area method
+                                    if retCnt == True: #return coordinates of contour and area
+                                        BergArea,coords = area_PS(cnt,file,retCon=True)
+                                    else: #return only area
+                                        BergArea = area_PS(cnt,file)
+                                elif areaMethod=="area_PS2": #use third area method
+                                    if retCnt == True: 
+                                        BergArea,coords = area_PS2(cnt,file,retCon=True)
+                                    else:
+                                        BergArea = area_PS2(cnt,file)
+                                elif areaMethod=="area_LL": #use fourth area method
+                                    if retCnt == True:
+                                        BergArea,coords = area_LL(cnt,file,retCon=True)
+                                    else:
+                                        BergArea = area_LL(cnt,file)
+                                elif areaMethod=="area_LL2": #use fifth area method
+                                    if retCnt == True:
+                                        BergArea,coords = area_LL2(cnt,file,retCon=True)
+                                    else:
+                                        BergArea = area_LL2(cnt,file)
+                                elif areaMethod=="area_Geographic": #use sixth area method
+                                    if retCnt == True:
+                                        BergArea,coords = area_Geographic(cnt,file,retCon=True)
+                                    else:
+                                        BergArea = area_Geographic(cnt,file)                   
+                                else: #use pixel area method
+                                    if retCnt==True: #error if trying to obtain contour coordinates 
+                                        raise Exception('Cannot obtain contour coordinates with this area method. Please try a different area method.')
+                                    h, w = img.shape[:2]
+                                    mask = np.zeros((h, w), np.uint8)
+                                    cv2.drawContours(mask, [cnt],-1, 255, -1) #create mask
+                                    BergArea = cv2.countNonZero(mask) #count nonzero pixels
+                                howClose = abs(BergArea-areaThresh) #record how close the contour area is to the area threshold
+                                if display == True: #display contour
+                                    h, w = img.shape[:2]
+                                    mask = np.zeros((h, w), np.uint8)
+                                    cv2.drawContours(mask, [icnt],-1, 255, -1) #create mask
+                                    res = cv2.bitwise_and(img, img, mask=mask) #apply mask to original image
+                                    print('CONTOUR',i) #current contour
+                                    plt.imshow(cv2.cvtColor(res, cv2.COLOR_BGR2RGB)) #show image
+                                    plt.show()
+                                    #print('AREA',BergArea) #estimated area
+                            else: #conotur is not the first one
+                                if areaMethod=="area_PixelImageDimensions": #use first area method
+                                    if retCnt==True: #error if trying to obtain contour coordinates 
+                                        raise Exception('Cannot obtain contour coordinates with this area method. Please try a different area method.')
+                                    h, w = img.shape[:2]
+                                    mask = np.zeros((h, w), np.uint8)
+                                    cv2.drawContours(mask, [icnt],-1, 255, -1) #create mask
+                                    curr_BergArea = area_PixelImageDimensions(mask,img)
+                                elif areaMethod=="area_PS": #use second area method
+                                    if retCnt == True: #return coordinates of contour and area
+                                        curr_BergArea,curr_coords = area_PS(icnt,file,retCon=True)
+                                    else: #return only area
+                                        curr_BergArea = area_PS(icnt,file)
+                                elif areaMethod=="area_PS2": #use third area method
+                                    if retCnt == True: 
+                                        curr_BergArea,curr_coords = area_PS2(icnt,file,retCon=True)
+                                    else:
+                                        curr_BergArea = area_PS2(icnt,file)
+                                elif areaMethod=="area_LL": #use fourth area method
+                                    if retCnt == True:
+                                        curr_BergArea,curr_coords = area_LL(icnt,file,retCon=True)
+                                    else:
+                                        curr_BergArea = area_LL(icnt,file)
+                                elif areaMethod=="area_LL2": #use fifth area method
+                                    if retCnt == True:
+                                        curr_BergArea,curr_coords = area_LL2(icnt,file,retCon=True)
+                                    else:
+                                        curr_BergArea = area_LL2(icnt,file)
+                                elif areaMethod=="area_Geographic": #use sixth area method
+                                    if retCnt == True:
+                                        curr_BergArea,curr_coords = area_Geographic(icnt,file,retCon=True)
+                                    else:
+                                        curr_BergArea = area_Geographic(icnt,file)                   
+                                else: #use pixel area method
+                                    if retCnt==True: #error if trying to obtain contour coordinates 
+                                        raise Exception('Cannot obtain contour coordinates with this area method. Please try a different area method.')
+                                    h, w = img.shape[:2]
+                                    mask = np.zeros((h, w), np.uint8)
+                                    cv2.drawContours(mask, [icnt],-1, 255, -1) #create mask
+                                    curr_BergArea = cv2.countNonZero(mask) #count nonzero pixels  
+                                if abs(curr_BergArea-areaThresh) < howClose and curr_BergArea < cutOff: #if area is closer to estimate
+                                    BergArea = curr_BergArea #update area
+                                    if retCnt == True: #if coordinates are needed then update coordinates
+                                        coords=curr_coords
+                                    howClose = abs(BergArea-areaThresh) #update how close the contour area is to the area threshold
+                                    cnt = icnt #update contour
+                                    if display == True: #show contour
+                                        h, w = img.shape[:2]
+                                        mask = np.zeros((h, w), np.uint8)
+                                        cv2.drawContours(mask, [cnt],-1, 255, -1)
+                                        res = cv2.bitwise_and(img, img, mask=mask)
+                                        print('CONTOUR',i)
+                                        plt.imshow(cv2.cvtColor(res, cv2.COLOR_BGR2RGB))
+                                        plt.show()
+                                        #print('AREA',BergArea)
+                    #No reprocessing
+                    else: 
+                        cnt = max(contours, key=cv2.contourArea) #find max contour
                         if areaMethod=="area_PixelImageDimensions": #use first area method
                             if retCnt==True: #error if trying to obtain contour coordinates 
                                 raise Exception('Cannot obtain contour coordinates with this area method. Please try a different area method.')
@@ -307,126 +427,19 @@ def ice_olate(directory,layerName=None,display=False,setThresh=None,areaMethod=N
                             mask = np.zeros((h, w), np.uint8)
                             cv2.drawContours(mask, [cnt],-1, 255, -1) #create mask
                             BergArea = cv2.countNonZero(mask) #count nonzero pixels
-                        howClose = abs(BergArea-areaThresh) #record how close the contour area is to the area threshold
-                        if display == True: #display contour
+                            print(BergArea)
+                        if display == True: #display image
                             h, w = img.shape[:2]
                             mask = np.zeros((h, w), np.uint8)
-                            cv2.drawContours(mask, [icnt],-1, 255, -1) #create mask
-                            res = cv2.bitwise_and(img, img, mask=mask) #apply mask to original image
-                            print('CONTOUR',i) #current contour
+                            cv2.drawContours(mask, [cnt],-1, 255, -1) #create mask
+                            print('MASKED')
+                            res = cv2.bitwise_and(img, img, mask=mask) #apply mask to image
                             plt.imshow(cv2.cvtColor(res, cv2.COLOR_BGR2RGB)) #show image
                             plt.show()
-                            #print('AREA',BergArea) #estimated area
-                    else: #conotur is not the first one
-                        if areaMethod=="area_PixelImageDimensions": #use first area method
-                            if retCnt==True: #error if trying to obtain contour coordinates 
-                                raise Exception('Cannot obtain contour coordinates with this area method. Please try a different area method.')
-                            h, w = img.shape[:2]
-                            mask = np.zeros((h, w), np.uint8)
-                            cv2.drawContours(mask, [icnt],-1, 255, -1) #create mask
-                            curr_BergArea = area_PixelImageDimensions(mask,img)
-                        elif areaMethod=="area_PS": #use second area method
-                            if retCnt == True: #return coordinates of contour and area
-                                curr_BergArea,curr_coords = area_PS(icnt,file,retCon=True)
-                            else: #return only area
-                                curr_BergArea = area_PS(icnt,file)
-                        elif areaMethod=="area_PS2": #use third area method
-                            if retCnt == True: 
-                                curr_BergArea,curr_coords = area_PS2(icnt,file,retCon=True)
-                            else:
-                                curr_BergArea = area_PS2(icnt,file)
-                        elif areaMethod=="area_LL": #use fourth area method
-                            if retCnt == True:
-                                curr_BergArea,curr_coords = area_LL(icnt,file,retCon=True)
-                            else:
-                                curr_BergArea = area_LL(icnt,file)
-                        elif areaMethod=="area_LL2": #use fifth area method
-                            if retCnt == True:
-                                curr_BergArea,curr_coords = area_LL2(icnt,file,retCon=True)
-                            else:
-                                curr_BergArea = area_LL2(icnt,file)
-                        elif areaMethod=="area_Geographic": #use sixth area method
-                            if retCnt == True:
-                                curr_BergArea,curr_coords = area_Geographic(icnt,file,retCon=True)
-                            else:
-                                curr_BergArea = area_Geographic(icnt,file)                   
-                        else: #use pixel area method
-                            if retCnt==True: #error if trying to obtain contour coordinates 
-                                raise Exception('Cannot obtain contour coordinates with this area method. Please try a different area method.')
-                            h, w = img.shape[:2]
-                            mask = np.zeros((h, w), np.uint8)
-                            cv2.drawContours(mask, [icnt],-1, 255, -1) #create mask
-                            curr_BergArea = cv2.countNonZero(mask) #count nonzero pixels  
-                        if abs(curr_BergArea-areaThresh) < howClose and curr_BergArea < cutOff: #if area is closer to estimate
-                            BergArea = curr_BergArea #update area
-                            if retCnt == True: #if coordinates are needed then update coordinates
-                                coords=curr_coords
-                            howClose = abs(BergArea-areaThresh) #update how close the contour area is to the area threshold
-                            cnt = icnt #update contour
-                            if display == True: #show contour
-                                h, w = img.shape[:2]
-                                mask = np.zeros((h, w), np.uint8)
-                                cv2.drawContours(mask, [cnt],-1, 255, -1)
-                                res = cv2.bitwise_and(img, img, mask=mask)
-                                print('CONTOUR',i)
-                                plt.imshow(cv2.cvtColor(res, cv2.COLOR_BGR2RGB))
-                                plt.show()
-                                #print('AREA',BergArea)
-            #No reprocessing
-            else: 
-                cnt = max(contours, key=cv2.contourArea) #find max contour
-                if areaMethod=="area_PixelImageDimensions": #use first area method
-                    if retCnt==True: #error if trying to obtain contour coordinates 
-                        raise Exception('Cannot obtain contour coordinates with this area method. Please try a different area method.')
-                    h, w = img.shape[:2]
-                    mask = np.zeros((h, w), np.uint8)
-                    cv2.drawContours(mask, [cnt],-1, 255, -1) #create mask
-                    BergArea = area_PixelImageDimensions(mask,img)
-                elif areaMethod=="area_PS": #use second area method
-                    if retCnt == True: #return coordinates of contour and area
-                        BergArea,coords = area_PS(cnt,file,retCon=True)
-                    else: #return only area
-                        BergArea = area_PS(cnt,file)
-                elif areaMethod=="area_PS2": #use third area method
-                    if retCnt == True: 
-                        BergArea,coords = area_PS2(cnt,file,retCon=True)
-                    else:
-                        BergArea = area_PS2(cnt,file)
-                elif areaMethod=="area_LL": #use fourth area method
-                    if retCnt == True:
-                        BergArea,coords = area_LL(cnt,file,retCon=True)
-                    else:
-                        BergArea = area_LL(cnt,file)
-                elif areaMethod=="area_LL2": #use fifth area method
-                    if retCnt == True:
-                        BergArea,coords = area_LL2(cnt,file,retCon=True)
-                    else:
-                        BergArea = area_LL2(cnt,file)
-                elif areaMethod=="area_Geographic": #use sixth area method
-                    if retCnt == True:
-                        BergArea,coords = area_Geographic(cnt,file,retCon=True)
-                    else:
-                        BergArea = area_Geographic(cnt,file)                   
-                else: #use pixel area method
-                    if retCnt==True: #error if trying to obtain contour coordinates 
-                        raise Exception('Cannot obtain contour coordinates with this area method. Please try a different area method.')
-                    h, w = img.shape[:2]
-                    mask = np.zeros((h, w), np.uint8)
-                    cv2.drawContours(mask, [cnt],-1, 255, -1) #create mask
-                    BergArea = cv2.countNonZero(mask) #count nonzero pixels
-                    print(BergArea)
-                if display == True: #display image
-                    h, w = img.shape[:2]
-                    mask = np.zeros((h, w), np.uint8)
-                    cv2.drawContours(mask, [cnt],-1, 255, -1) #create mask
-                    print('MASKED')
-                    res = cv2.bitwise_and(img, img, mask=mask) #apply mask to image
-                    plt.imshow(cv2.cvtColor(res, cv2.COLOR_BGR2RGB)) #show image
-                    plt.show()
-                    #print('AREA',BergArea) #area
-            trackAreas[file] = BergArea #record area  
-    #Return
-    if retCnt == True:
-        return trackAreas,cnt,coords,mask #return areas, pixel contours, and coordinates
-    else:
-        return trackAreas #return areas   
+                            #print('AREA',BergArea) #area
+                    trackAreas[file] = BergArea #record area  
+            #Return
+            if retCnt == True:
+                return trackAreas,cnt,coords,mask #return areas, pixel contours, and coordinates
+            else:
+                return trackAreas #return areas
