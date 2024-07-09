@@ -1,10 +1,11 @@
+'''Uncomment the desired download in downloadCSV function.'''
 import urllib.parse
 import datetime
 from csv import DictReader
 from pyproj import Transformer
 import requests
 
-def tiffs(output,layer,time,latlon): 
+def tiffs(output,layer,time,latlon,resolution = '250m'): 
  
     """Download Antarctic geotiffs (EPSG:3031) from NASA Worldview Snapshots tool: https://wvs.earthdata.nasa.gov/
        
@@ -38,10 +39,11 @@ def tiffs(output,layer,time,latlon):
     transformer = Transformer.from_crs("epsg:4326", "epsg:3031") #convert from latlon to polar stereographic coordinates
     x,y = transformer.transform(latlon[0],latlon[1])
     bbox = [x-150000,y-150000,x+150000,y+150000] #bounding box is a 15km x 15km square around center coordinate
-    BASE_URL = "https://wvs.earthdata.nasa.gov/api/v1/snapshot?REQUEST=GetSnapshot&LAYERS={lyr}&CRS=EPSG:3031&TIME={tim}&WRAP=DAY&BBOX={bbox}&FORMAT=image/tiff&WIDTH=1172&HEIGHT=1172" 
+    BASE_URL = "https://wvs.earthdata.nasa.gov/api/v1/snapshot?REQUEST=GetSnapshot&LAYERS={lyr}&CRS=EPSG:3031&TIME={tim}&WRAP=DAY&BBOX={bbox}&FORMAT=image/tiff&AUTOSCALE=FALSE&RESOLUTION={res}" 
     dl = BASE_URL.format(  
         lyr = layer,
         tim = time,
+        res = resolution,
         bbox = ",".join([str(v) for v in bbox]),
         ) #fill base url with arguements
     r = requests.get(dl) #download image from url
@@ -68,7 +70,7 @@ def convertDate(date):
     res = datetime.datetime.strptime(year + "-" + daynum, "%Y-%j").strftime("%Y-%m-%d") #convert 
     return(res) #return YYYY-MM-DD format
 
-def downloadCSV(file,output,coord1 = 'lat',coord2 = 'lon',timeRange=None,displayDates=True):
+def downloadCSV(file,output,resolution='250m',coord1 = 'lat',coord2 = 'lon',timeRange=None,displayDates=True):
     """Use BYU data to download these layers:
             MODIS_Terra_CorrectedReflectance_Bands367
             MODIS_Terra_CorrectedReflectance_Bands721
@@ -77,8 +79,6 @@ def downloadCSV(file,output,coord1 = 'lat',coord2 = 'lon',timeRange=None,display
             VIIRS_SNPP_CorrectedReflectance_TrueColor
             VIIRS_NOAA20_CorrectedReflectance_TrueColor
             VIIRS_NOAA20_CorrectedReflectance_BandsM11-I2-I1
-        All except MODIS_Terra_CorrectedReflectance_TrueColor are commented out.
-
             
         Args:
             file (str): BYU csv file
@@ -99,21 +99,23 @@ def downloadCSV(file,output,coord1 = 'lat',coord2 = 'lon',timeRange=None,display
                 if (int(row['date']) <= int(timeRange[1])) and (int(row['date']) >= int(timeRange[0])): #download from earliest to latest date
                     if displayDates == True:
                         print(row['date'])
-                    #dl = tiffs(output+"MODT367_"+convertDate(row['date']),'MODIS_Terra_CorrectedReflectance_Bands367',convertDate(row['date']),(float(row[coord1]),float(row[coord2])))
-                    #dl = tiffs(output+"MODT721_"+convertDate(row['date']),'MODIS_Terra_CorrectedReflectance_Bands721',convertDate(row['date']),(float(row[coord1]),float(row[coord2])))
-                    dl = tiffs(output+convertDate(row['date'])+'.tif','MODIS_Terra_CorrectedReflectance_TrueColor',convertDate(row['date']),(float(row[coord1]),float(row[coord2])))
-                    #dl = tiffs(output+"MODA_TRUE_"+convertDate(row['date']),'MODIS_Aqua_CorrectedReflectance_TrueColor',convertDate(row['date']),(float(row[coord1]),float(row[coord2])))
-                    #dl = tiffs(output+"VIR_SNPP_TRUE_"+convertDate(row['date']),'VIIRS_SNPP_CorrectedReflectance_TrueColor',convertDate(row['date']),(float(row[coord1]),float(row[coord2])))
-                    #dl = tiffs(output+"VIR_NOAA_TRUE_"+convertDate(row['date']),'VIIRS_NOAA20_CorrectedReflectance_TrueColor',convertDate(row['date']),(float(row[coord1]),float(row[coord2])))
-                    #dl = tiffs(output+"VIR_NOAA_M11I2I1_"+convertDate(row['date']),'VIIRS_NOAA20_CorrectedReflectance_BandsM11-I2-I1',convertDate(row['date']),(float(row[coord1]),float(row[coord2])))
+                    #dl = tiffs(output+"MODT367_"+convertDate(row['date'])+'.tif','MODIS_Terra_CorrectedReflectance_Bands367',convertDate(row['date']),(float(row[coord1]),float(row[coord2])),resolution)
+                    #dl = tiffs(output+"MODT721_"+convertDate(row['date'])+'.tif','MODIS_Terra_CorrectedReflectance_Bands721',convertDate(row['date']),(float(row[coord1]),float(row[coord2])),resolution)
+                    #dl = tiffs(output+convertDate(row['date'])+'.tif','MODIS_Terra_CorrectedReflectance_TrueColor',convertDate(row['date']),(float(row[coord1]),float(row[coord2])),resolution)
+                    #dl = tiffs(output+"MODA_TRUE_"+convertDate(row['date'])+'.tif','MODIS_Aqua_CorrectedReflectance_TrueColor',convertDate(row['date']),(float(row[coord1]),float(row[coord2])),resolution)
+                    #dl = tiffs(output+convertDate(row['date'])+'.tif','MODIS_Aqua_CorrectedReflectance_Bands721',convertDate(row['date']),(float(row[coord1]),float(row[coord2])),resolution)
+                    #dl = tiffs(output+"VIR_SNPP_TRUE_"+convertDate(row['date'])+'.tif','VIIRS_SNPP_CorrectedReflectance_TrueColor',convertDate(row['date']),(float(row[coord1]),float(row[coord2])),resolution)
+                    #dl = tiffs(output+"VIR_NOAA_TRUE_"+convertDate(row['date'])+'.tif','VIIRS_NOAA20_CorrectedReflectance_TrueColor',convertDate(row['date']),(float(row[coord1]),float(row[coord2])),resolution)
+                    #dl = tiffs(output+"VIR_NOAA_M11I2I1_"+convertDate(row['date'])+'.tif','VIIRS_NOAA20_CorrectedReflectance_BandsM11-I2-I1',convertDate(row['date']),(float(row[coord1]),float(row[coord2])))
             else: #else download all dates in csv
                 if displayDates == True:
                     print(row['date']) 
-                    #dl = tiffs(output+"MODT367_"+convertDate(row['date']),'MODIS_Terra_CorrectedReflectance_Bands367',convertDate(row['date']),(float(row[coord1]),float(row[coord2])))
-                    #dl = tiffs(output+"MODT721_"+convertDate(row['date']),'MODIS_Terra_CorrectedReflectance_Bands721',convertDate(row['date']),(float(row[coord1]),float(row[coord2])))
-                    dl = tiffs(output+convertDate(row['date'])+'.tif','MODIS_Terra_CorrectedReflectance_TrueColor',convertDate(row['date']),(float(row[coord1]),float(row[coord2])))
-                    #dl = tiffs(output+"MODA_TRUE_"+convertDate(row['date']),'MODIS_Aqua_CorrectedReflectance_TrueColor',convertDate(row['date']),(float(row[coord1]),float(row[coord2])))
-                    #dl = tiffs(output+"VIR_SNPP_TRUE_"+convertDate(row['date']),'VIIRS_SNPP_CorrectedReflectance_TrueColor',convertDate(row['date']),(float(row[coord1]),float(row[coord2])))
-                    #dl = tiffs(output+"VIR_NOAA_TRUE_"+convertDate(row['date']),'VIIRS_NOAA20_CorrectedReflectance_TrueColor',convertDate(row['date']),(float(row[coord1]),float(row[coord2])))
-                    #dl = tiffs(output+"VIR_NOAA_M11I2I1_"+convertDate(row['date']),'VIIRS_NOAA20_CorrectedReflectance_BandsM11-I2-I1',convertDate(row['date']),(float(row[coord1]),float(row[coord2])))
+                    #dl = tiffs(output+"MODT367_"+convertDate(row['date'])+'.tif','MODIS_Terra_CorrectedReflectance_Bands367',convertDate(row['date']),(float(row[coord1]),float(row[coord2])),resolution)
+                    #dl = tiffs(output+"MODT721_"+convertDate(row['date'])+'.tif','MODIS_Terra_CorrectedReflectance_Bands721',convertDate(row['date']),(float(row[coord1]),float(row[coord2])),resolution)
+                    #dl = tiffs(output+convertDate(row['date'])+'.tif','MODIS_Terra_CorrectedReflectance_TrueColor',convertDate(row['date']),(float(row[coord1]),float(row[coord2])),resolution)
+                    #dl = tiffs(output+"MODA_TRUE_"+convertDate(row['date'])+'.tif','MODIS_Aqua_CorrectedReflectance_TrueColor',convertDate(row['date']),(float(row[coord1]),float(row[coord2])),resolution)
+                    #dl = tiffs(output+convertDate(row['date'])+'.tif','MODIS_Aqua_CorrectedReflectance_Bands721',convertDate(row['date']),(float(row[coord1]),float(row[coord2])),resolution)
+                    #dl = tiffs(output+"VIR_SNPP_TRUE_"+convertDate(row['date'])+'.tif','VIIRS_SNPP_CorrectedReflectance_TrueColor',convertDate(row['date']),(float(row[coord1]),float(row[coord2])),resolution)
+                    #dl = tiffs(output+"VIR_NOAA_TRUE_"+convertDate(row['date'])+'.tif','VIIRS_NOAA20_CorrectedReflectance_TrueColor',convertDate(row['date']),(float(row[coord1]),float(row[coord2])),resolution)
+                    #dl = tiffs(output+"VIR_NOAA_M11I2I1_"+convertDate(row['date'])+'.tif','VIIRS_NOAA20_CorrectedReflectance_BandsM11-I2-I1',convertDate(row['date']),(float(row[coord1]),float(row[coord2])))
     print('done')
