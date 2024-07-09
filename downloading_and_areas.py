@@ -23,12 +23,12 @@ def download_and_areas(icebergname, output_location, coord1 = 'lat', coord2 = 'l
       Returns:
             Dictionary of daily areas from non-cloudy, non-cropped images of the iceberg from NASA.
   '''
-    downloadCSV('Stats Database/'+icebergname+'.csv', output_location, coord1, coord2,timeRange)
-    directory = output_location
-    areas_dict = {}
-    for image in os.listdir(directory):
-        name = image.rstrip('.tif')
-        area = pixel_area(directory+image)
-        areas_dict[str(name)] = area
-    print(areas_dict)
-    return areas_dict
+  downloadCSV('Stats Database/'+icebergname+'.csv', output_location, coord1, coord2,timeRange)
+  directory = output_location
+  areas_dict = {}
+  for image in os.listdir(directory):
+      name = image.rstrip('.tif')
+      area = pixel_area(directory+image)
+      areas_dict[str(name)] = area
+  print(areas_dict)
+  return areas_dict
