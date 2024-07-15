@@ -22,7 +22,7 @@ from pyproj import Proj
 from pyproj import Transformer
 
 import pickle
-
+    
 def iceStats(dataSet):
     """Display statistics of dataset
         Args:
@@ -233,7 +233,7 @@ def ice_olate(directory,layerName=None,display=False,setThresh=None,areaMethod=N
         if layerName == "red": #isolate the red channel/the first band/band 3 for MODIS367 images 
             band = rimg.read(1)         
         if layerName == "blue": #isolate the red channel/the third band/band 1 for MODIS721 images and VIIRSM1I111 images
-            band = rimg.read(3)    
+            band = rimg.read([2,3,4])    
         elif layerName == None: #binarize true color images
             band = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         if setThresh != None: #if image is being reprocessed, the threshold can be adjusted for better results
@@ -254,14 +254,15 @@ def ice_olate(directory,layerName=None,display=False,setThresh=None,areaMethod=N
         blur = cv2.blur(img_dilation,(15,15))
         dataset = rasterio.open(file)
         total_pixel = dataset.height*dataset.width
-        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY) 
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    #Parameters for skipping over cropped-out images and cloudy images.
         nonZero = cv2.countNonZero(gray) #count nonzero pixels
         if nonZero<=.25*total_pixel:
             print('Cropped out.')
             return('Cropped out.')
         else:
             nonZero = cv2.countNonZero(blur) #count nonzero pixels
-            if nonZero >= .75*total_pixel:
+            if nonZero >= .9*total_pixel:
                 print('Too cloudy.')
                 return('Too cloudy.')
             else:
