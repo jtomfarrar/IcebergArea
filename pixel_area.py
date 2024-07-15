@@ -29,6 +29,7 @@ from shapely.geometry import shape
 
 
 
+
 def pixel_to_coordinates(x, y, width, height, xmin, ymin, xmax, ymax):
     ''' Function to convert pixels to coordinates.
         Args: 
@@ -54,7 +55,7 @@ def pixel_to_coordinates(x, y, width, height, xmin, ymin, xmax, ymax):
 
 
 def pixel_area(file,layerName=None):
-    ''' Finds the area of an iceberg in km2. Filters out areas less than 300km and large masks due to clouds (>10% white pixels in mask).
+    ''' Finds the area of an iceberg in km2.
         Args:
                 file (string): file GEOTiff
         Return:
@@ -62,13 +63,15 @@ def pixel_area(file,layerName=None):
     '''
 
     try:
-        areas,cont,coords,mask = ice.ice_olate(file,layerName,display=True,areaMethod="area_LL2",areaThresh=5000,retCnt=True)
+        areas,cont,coords,mask = ice.ice_olate(file,layerName=None,display=True,areaMethod="area_LL2",retCnt=True)
 
         #Finding the interior coordinates of the contour, using mask from ice_olate    
         mask_binary = (mask > 0).astype(np.uint8)
         coordinates = np.column_stack(np.where(mask_binary))
         interior_coordinates = coordinates[:, ::-1]
 
+        
+    
         #Finding data from image    
         dataset = rasterio.open(file)
         print(dataset.height, dataset.width)
@@ -84,9 +87,10 @@ def pixel_area(file,layerName=None):
         width = dataset.width
         height = dataset.height
         total_pixel = width*height
-
+        
+        # Creates an upper limit to how big the iceberg can be, or the mask of the iceberg. Edit percentage to the expected iceberg limit.
         nonZero = cv2.countNonZero(mask) #count nonzero pixels
-        if nonZero >= .1*total_pixel:
+        if nonZero >= .4*total_pixel:
                 print('Too cloudy.')
                 return('Too cloudy.')
         
@@ -96,6 +100,8 @@ def pixel_area(file,layerName=None):
         for point in interior_coordinates:
             x, y = pixel_to_coordinates(point[0], point[1], width, height, xmin, ymin, xmax, ymax)
             coordinates.append((x, y))
+    
+    
     
     
         #Make a list of all the coordinates. In each [[all four coordinates for one center],[all four coordinates for the next center]...etc]
@@ -150,13 +156,8 @@ def pixel_area(file,layerName=None):
             cop = {"type": "Polygon", "coordinates": [zip(x, y)]}
             total_area += shape(cop).area
         areakm = total_area/1e+6
-
-        if areakm<=300:
-            print('Too small.')
-            return ('Too small.')
-        else:
-            print('BERG TOTAL KM2:', areakm)
-            return areakm
+        print('BERG TOTAL KM2:', areakm)
+        return areakm
+        
     except:
         return('Too cloudy.')
-    
