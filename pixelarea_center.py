@@ -293,7 +293,7 @@ def ice_olate(directory,layerName=None,display=False,setThresh=None):
                                     plt.show()
                                     print('AREA',BergArea)
                                     
-                    if BergArea == 'N/A':
+                    if BergArea == 'N/A': #if center coordinate not in any contours
                         cnt = max(contours, key=cv2.contourArea) #find max contour
                         h, w = img.shape[:2]
                         mask = np.zeros((h, w), np.uint8)
