@@ -197,7 +197,7 @@ def ice_olate(directory,layerName=None,display=False,setThresh=None):
     """
 
     areas_dict = {}
-    for file in os.listdir(directory):
+    for file in sorted(os.listdir(directory)):
         name = file.rstrip('.tif')        
         rimg = rasterio.open(directory+file) #open image using rasterio
         img = cv2.imread(directory+file) #open image using cv2
