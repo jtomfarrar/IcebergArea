@@ -1,4 +1,5 @@
 '''
+There is a faster version of this, pixelarea_center.py
 Finds the area of an iceberg, where the iceberg is located in the center of the image.
 If it's not containing the center coordinate, it finds the largest area.
 '''
