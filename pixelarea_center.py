@@ -1,6 +1,7 @@
 '''
-Finds the area of an iceberg, where the iceberg is located in the center of the image.
-If it's not containing the center coordinate, it finds the largest area.
+Finds the area of an iceberg, where the iceberg is located in the center of the image. 
+Thresholding for the image is based on the grayscale value of the center pixel.
+If the iceberg does not contain the center coordinate, the image is discarded.
 '''
 import rasterio
 from rasterio.plot import show
@@ -26,6 +27,8 @@ from pyproj import Proj
 from pyproj import Transformer
 from shapely.geometry import shape
 
+from multiprocessing import Pool
+import multiprocessing
 
 import pickle
     
@@ -78,11 +81,11 @@ def getdates(dictionary):
         chenk.sort()
     return chenk
 
-def find_interior(mask,directory):
+def find_interior(mask,dataset):
     '''Find all interior coordinates of a contour
         Args:
             mask (NumPy array): mask of iceberg contour
-            directory (str): file name
+            dataset (str): file name
         Return:
             list of all interior coordinates
     '''
@@ -91,7 +94,7 @@ def find_interior(mask,directory):
     coordinates = np.column_stack(np.where(mask_binary))
     interior_coordinates = coordinates[:, ::-1]
 
-    dataset = rasterio.open(directory)
+    dataset = rasterio.open(dataset)
 
     coordinates = []
     for point in interior_coordinates:
@@ -100,24 +103,83 @@ def find_interior(mask,directory):
     return coordinates
 
 
+def process_coordinate(corner1,corner2,corner3,corner4):
+    '''
+    Process one pixel as defined in pixel_area to find its area in m2.
+    Args:
+        corner1,corner2,corner3,corner4: corners of the pixel whos area is being processed.
+    Return:
+        area of one pixel as a float
+    '''
+    latlon_corners = [corner1, corner2, corner3, corner4]
+    
+    area = 0
 
-def pixel_area(mask,directory):
+    # Calculate the min/max latitudes and longitudes
+    max_lat = max(latlon_corners[0][0], latlon_corners[1][0], latlon_corners[2][0], latlon_corners[3][0])
+    min_lat = min(latlon_corners[0][0], latlon_corners[1][0], latlon_corners[2][0], latlon_corners[3][0])
+    max_lon = max(latlon_corners[0][1], latlon_corners[1][1], latlon_corners[2][1], latlon_corners[3][1])
+    min_lon = min(latlon_corners[0][1], latlon_corners[1][1], latlon_corners[2][1], latlon_corners[3][1])
 
-                
+    # Create a polygon and calculate its area
+    pixel = {"type": "Polygon", "coordinates": [
+        [(latlon_corners[0][1], latlon_corners[0][0]),
+         (latlon_corners[1][1], latlon_corners[1][0]),
+         (latlon_corners[2][1], latlon_corners[2][0]),
+         (latlon_corners[3][1], latlon_corners[3][0]),
+         (latlon_corners[0][1], latlon_corners[0][0])]]}
+    
+    lon, lat = zip(*pixel['coordinates'][0])
+    
+    # Define the projection
+    pa = Proj(f'+proj=aea +lat_1={min_lat} +lat_2={max_lat} +lat_0={(max_lat-min_lat)/2} +lon_0={(max_lon-min_lon)/2}')
+    x, y = pa(lon, lat)
+    
+    # Calculate the area of the projected polygon
+    cop = {"type": "Polygon", "coordinates": [list(zip(x, y))]}
+    area += shape(cop).area
+    return area
+
+def compute_total_area(latlon_corners):
+    '''
+    Process one pixel as defined in pixel_area to find its area in m2.
+    Args:
+        latlon_corners: a list of the coordinates bounding all pixels: 
+            In each [[all four coordinates for one center],[all four coordinates for the next center]...etc].
+    Return:
+        summed area of all pixels as a float
+    '''
+    total_area = 0
+    with Pool(processes=40) as pool:
+        results = pool.starmap(process_coordinate, latlon_corners)
+    for area in results:
+        total_area+=area
+    return total_area
+
+def pixel_area(mask,dataset):
+    '''
+    Finds the area of an iceberg in km2 from its mask.
+    Args:
+        mask (NumPy array): mask of iceberg contour
+        dataset (str): file name
+    Return:
+        area of the iceberg in km2 as a float
+    '''
+            
     #Finding the interior coordinates of the contour, using mask from ice_olate    
     mask_binary = (mask > 0).astype(np.uint8)
     coordinates = np.column_stack(np.where(mask_binary))
     interior_coordinates = coordinates[:, ::-1]  
 
     #Finding data from image    
-    dataset = rasterio.open(directory)
+    dataset = rasterio.open(dataset)
     width = dataset.width
     height = dataset.height
     total_pixel = width*height
     
     # Creates an upper limit to how big the iceberg can be, or the mask of the iceberg. Edit percentage to the expected iceberg limit.
     nonZero = cv2.countNonZero(mask) #count nonzero pixels
-    if nonZero >= .1*total_pixel:
+    if nonZero >= .10*total_pixel:
             print('Too big.')
             return('Too big.')
     
@@ -158,32 +220,13 @@ def pixel_area(mask,directory):
         individual_corner.append([fouri,fourj])
         latlon_corners.append(individual_corner)
 
-    #Finding the area in m2    
-    total_area = 0
-    for coordinate in latlon_corners:
-        max_lat = max(coordinate[0][0],coordinate[1][0],coordinate[2][0],coordinate[3][0])
-        min_lat = min(coordinate[0][0],coordinate[1][0],coordinate[2][0],coordinate[3][0])
-        max_lon = max(coordinate[0][1],coordinate[1][1],coordinate[2][1],coordinate[3][1])
-        min_lon = min(coordinate[0][1],coordinate[1][1],coordinate[2][1],coordinate[3][1])
-    
-        pixel = {"type": "Polygon", "coordinates": [
-            [(coordinate[0][1],coordinate[0][0]),
-             (coordinate[1][1],coordinate[1][0]),
-             (coordinate[2][1],coordinate[2][0]),
-             (coordinate[3][1],coordinate[3][0]),
-             (coordinate[0][1],coordinate[0][0])]]}
-        lon, lat = zip(*pixel['coordinates'][0])
-        pa = Proj('+proj=aea +lat_1=' + str(min_lat) + ' +lat_2=' + str(max_lat) + ' +lat_0=' + str((max_lat-min_lat)/2) + ' +lon_0=' + str((max_lon-min_lon)/2))
-        x, y = pa(lon, lat)
-        cop = {"type": "Polygon", "coordinates": [zip(x, y)]}
-        total_area += shape(cop).area
-        
+    #Finding the area in m2 using multiprocessing    
+    total_area = compute_total_area(latlon_corners)
+         
     #Convert to km2
     areakm = total_area/1e+6
     return areakm
 
-    
-    
 def ice_olate(directory,layerName=None,display=False,setThresh=None):
     """Isolate iceberg from its surroundings. Filters out images with less than 25% white pixels and more than 90% white pixels.
 
@@ -197,7 +240,7 @@ def ice_olate(directory,layerName=None,display=False,setThresh=None):
     """
 
     areas_dict = {}
-    for file in sorted(os.listdir(directory)):
+    for file in sorted(os.listdir(directory))[1:]:
         name = file.rstrip('.tif')        
         rimg = rasterio.open(directory+file) #open image using rasterio
         img = cv2.imread(directory+file) #open image using cv2
@@ -231,14 +274,14 @@ def ice_olate(directory,layerName=None,display=False,setThresh=None):
         dataset = rasterio.open(directory+file)
         total_pixel = dataset.height*dataset.width
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    #Parameters for skipping over cropped-out images and cloudy images.
+    #Parameters for skipping over cropped-out images and cloudy images. Change 0.25 to change filtered criterion.
         nonZero = cv2.countNonZero(gray) #count nonzero pixels
         if nonZero<=.25*total_pixel:
             print('Cropped out.')
             pass        
         else:
             nonZero = cv2.countNonZero(blur) #count nonzero pixels
-            if nonZero >= .9*total_pixel:
+            if nonZero >= .9*total_pixel: #Change 0.9 to change cloud criterion
                 print('Too cloudy.')
                 pass
             else:
@@ -255,7 +298,7 @@ def ice_olate(directory,layerName=None,display=False,setThresh=None):
             #Find center of image
                     center = (dataset.transform*(dataset.width/2,dataset.height/2)) #find center coordinate
                     BergArea = 'N/A'
-                #Reprocesssing
+            #Reprocesssing
                     cnt = contours[0] #first contour
                     for i in range(len(contours)): #check for closest area among contours
                         icnt = contours[i] #current contour
@@ -264,7 +307,7 @@ def ice_olate(directory,layerName=None,display=False,setThresh=None):
                             mask = np.zeros((h, w), np.uint8)
                             cv2.drawContours(mask, [cnt],-1, 255, -1)
                             coordinates = find_interior(mask,directory+file) #find interior coordinates
-                            if center in coordinates: #check if the center coordinate's in the contour
+                            if center in coordinates: #check if the center coordinate is in the contour
                                 BergArea = pixel_area(mask,directory+file)
                                 if display == True: #display contour
                                     h, w = img.shape[:2]
@@ -281,7 +324,7 @@ def ice_olate(directory,layerName=None,display=False,setThresh=None):
                             mask = np.zeros((h, w), np.uint8)
                             cv2.drawContours(mask, [icnt],-1, 255, -1) #create mask
                             coordinates = find_interior(mask,directory+file)
-                            if center in coordinates:
+                            if center in coordinates: #check if the center coordinate is in the contour
                                 BergArea = pixel_area(mask,directory+file)
                                 if display == True: #show contour
                                     h, w = img.shape[:2]
@@ -292,23 +335,7 @@ def ice_olate(directory,layerName=None,display=False,setThresh=None):
                                     plt.imshow(cv2.cvtColor(res, cv2.COLOR_BGR2RGB))
                                     plt.show()
                                     print('AREA',BergArea)
-                                    
-                    if BergArea == 'N/A': #if center coordinate not in any contours
-                        cnt = max(contours, key=cv2.contourArea) #find max contour
-                        h, w = img.shape[:2]
-                        mask = np.zeros((h, w), np.uint8)
-                        cv2.drawContours(mask, [cnt],-1, 255, -1)
-                        BergArea = pixel_area(mask,directory+file)
-                        if display == True: #display contour
-                            h, w = img.shape[:2]
-                            mask = np.zeros((h, w), np.uint8)
-                            cv2.drawContours(mask, [cnt],-1, 255, -1) #create mask
-                            res = cv2.bitwise_and(img, img, mask=mask) #apply mask to original image
-                            print('CONTOUR') #current contour
-                            plt.imshow(cv2.cvtColor(res, cv2.COLOR_BGR2RGB)) #show image
-                            plt.show()
-                            print('AREA',BergArea) #estimated area
-                             
+
     
                 try:
                     print('Final Area:',BergArea)
